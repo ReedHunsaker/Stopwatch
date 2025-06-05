@@ -14,12 +14,16 @@ import Foundation
 /// - Resuming a stopwatch that has been stopped
 /// - Recording a lap in the stopwatch
 /// - Polling the stop watch with a custom duration for up to date `totalTimeElapsedInSeconds`
-actor Stopwatch {
+public actor Stopwatch {
     
     /// Laps are saved as the total seconds that have elapsed since the last lap was recorded
     ///
     /// The first lap recorded is the number of seconds that have elapsed since the stopwatch was started
-    private(set) var laps: [Double] = []
+    public var laps: [Double] {
+        get async {
+            await getLapTimes()
+        }
+    }
     
     /// The total time elapsed in seconds since the stopwatch has started
     /// This does not included the time the stopwatch was stopped
@@ -27,30 +31,45 @@ actor Stopwatch {
         secondsElapsed + pauseDiff
     }
     
+    public var secondsElapsedThisLap: Double {
+        get async {
+            guard let lastLap = _laps.last else { return totalTimeElapsedInSeconds }
+            return await lastLap.secondsElapsed
+        }
+    }
+    
     /// The current phase the stopwatch is in
     public var phase: StopwatchPhase = .initialized
-        
-    public init() {}
+    
+    
+    public init() {
+        self.isLap = false
+        _laps.append(Stopwatch.lap())
+    }
+    
+    init(isLap: Bool) {
+        self.isLap = isLap
+    }
     
     deinit {
         pollingContinuation?.finish()
     }
     
     /// Sets a start time and begins measuring the time that has elapsed
+    ///
+    /// If the stop watch was stopped (or paused) it will store the seconds measured and reset the start time
     public func start() {
-        guard startTime == nil else { return }
+        if phase == .stopped {
+            pauseDiff += secondsElapsed
+        }
         startTime = DispatchTime.now()
         stopTime = nil
         phase = .running
-    }
-    
-    /// Resumes a stopwatch that has been stopped
-    public func resume() {
-        guard phase == .stopped else { return }
-        pauseDiff += secondsElapsed
-        self.startTime = DispatchTime.now()
-        self.stopTime = nil
-        phase = .running
+        
+        Task {
+            await _laps.last?.start()
+        }
+        
         pollingTask = createPollingTask?()
     }
     
@@ -61,14 +80,23 @@ actor Stopwatch {
         guard stopTime == nil else { return }
         stopTime = DispatchTime.now()
         phase = .stopped
+        Task {
+            await _laps.last?.stop()
+        }
         pollingTask?.cancel()
     }
     
     
-    /// Records a lap in the stopwatch
+    /// Records a lap in the stopwatch if running
     public func lap() {
-        guard phase == .running else { return }
-        laps.append(totalTimeElapsedInSeconds)
+        guard phase == .running, !isLap else { return }
+        let newLap = Stopwatch.lap()
+        let lastLap = _laps.last
+        Task {
+            await lastLap?.stop()
+            await newLap.start()
+        }
+        _laps.append(newLap)
     }
     
     
@@ -77,7 +105,9 @@ actor Stopwatch {
         startTime = nil
         stopTime = nil
         pauseDiff = 0
-        laps.removeAll()
+        if !isLap {
+            _laps = [Stopwatch.lap()]
+        }
         phase = .initialized
     }
     
@@ -85,13 +115,16 @@ actor Stopwatch {
     /// Polls the stopwatch for updated `totalTimeElapsedInSeconds`
     ///
     /// The polling task is canceled when the stopwatch is stopped and recreated when it resumes.
-    public func poll(every duration: ContinuousClock.Instant.Duration = .milliseconds(10)) -> AsyncStream<Double> {
+    public func poll(every duration: ContinuousClock.Instant.Duration = .milliseconds(10)) -> AsyncStream<StopwatchSnapshot> {
         
         self.createPollingTask = { [weak self] in
             Task.detached {
-                try await Task.sleep(for: duration)
-                guard let self else { return }
-                await self.pollingContinuation?.yield(self.totalTimeElapsedInSeconds)
+                while true {
+                    try await Task.sleep(for: duration)
+                    guard let self else { return }
+                    let snapshot = await self.currentSnapshot
+                    await self.pollingContinuation?.yield(snapshot)
+                }
             }
         }
         
@@ -102,7 +135,10 @@ actor Stopwatch {
             
             self.pollingTask = self.createPollingTask?()
             
-            continuation.yield(totalTimeElapsedInSeconds)
+            Task {
+                let snapshot = await self.currentSnapshot
+                continuation.yield(snapshot)
+            }
             
             continuation.onTermination = { @Sendable _ in
                 Task {
@@ -123,6 +159,22 @@ actor Stopwatch {
     /// The time elapsed before the stopwatch was paused.
     private var pauseDiff: Double = 0
     
+    /// Each lap is just another stopwatch
+    private var _laps = [Stopwatch]()
+    
+    /// Is the current instance of stopwatch a lap
+    private let isLap: Bool
+    
+    private var currentSnapshot: StopwatchSnapshot {
+        get async {
+            let totalTimeElapsedInSeconds = self.totalTimeElapsedInSeconds
+            return await StopwatchSnapshot(
+                totalTimeElapsedInSeconds: totalTimeElapsedInSeconds,
+                lapTimeElapsedInSeconds: _laps.last?.totalTimeElapsedInSeconds ?? totalTimeElapsedInSeconds
+            )
+        }
+    }
+    
     /// Computes the seconds elapsed from the start time to the stop time
     private var secondsElapsed: Double {
         startTime.secondsSince(stopTime)
@@ -132,5 +184,18 @@ actor Stopwatch {
     
     private var pollingTask: Task<Void, any Error>?
     
-    private var pollingContinuation: AsyncStream<Double>.Continuation?
+    private var pollingContinuation: AsyncStream<StopwatchSnapshot>.Continuation?
+    
+    private func getLapTimes() async -> [Double] {
+        var lapTimes = [Double]()
+        for lap in _laps {
+            guard await lap.phase == .stopped else { continue }
+            await lapTimes.append(lap.totalTimeElapsedInSeconds)
+        }
+        return lapTimes
+    }
+    
+    static func lap() -> Self {
+        .init(isLap: true)
+    }
 }

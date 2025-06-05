@@ -14,9 +14,15 @@ extension Optional<DispatchTime> {
         guard let startTime = self else {
             return 0
         }
+        return startTime.secondsSince(endTime)
+    }
+}
+
+extension DispatchTime {
+    /// Seconds which have elapsed between the start and stop time of a `DispatchTime`
+    public func secondsSince(_ endTime: DispatchTime?) -> Double {
         let stopTime = endTime ?? DispatchTime.now()
-        let elapsedTime = (stopTime.uptimeNanoseconds - startTime.uptimeNanoseconds)
-        let elapsedTimeInMilliSeconds = (Double(elapsedTime)) / 1_000_000.0
-        return elapsedTimeInMilliSeconds / 1_000
+        let elapsedTime = (stopTime.uptimeNanoseconds - self.uptimeNanoseconds)
+        return (Double(elapsedTime)) / 1_000_000_000.0
     }
 }

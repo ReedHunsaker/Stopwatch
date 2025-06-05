@@ -9,13 +9,16 @@ import SwiftUI
 
 struct ContentView: View {
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+        NavigationStack {
+            List {
+                NavigationLink("Classic stopwatch demo") {
+                    ClassicStopwatchDemoScreen()
+                }
+                NavigationLink("Stopwatch game demo") {
+                    StopwatchGameDemoScreen()
+                }
+            }.navigationTitle("Stopwatch Demo App")
         }
-        .padding()
     }
 }
 

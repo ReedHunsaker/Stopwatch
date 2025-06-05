@@ -7,14 +7,12 @@
 
 public enum StopwatchPhase: Sendable {
     
-    /// The stop watch has been created or reset but hasn't started running
-    ///
-    /// If it was reset it can not be resumed
+    /// The stopwatch has been created or reset but hasn't started running
     case initialized
     
-    /// The stop watch is currently running
+    /// The stopwatch is measuring the elapsed time
     case running
     
-    /// The stop watch has stopped and can be resumed
+    /// The stopwatch was running and has now been stopped
     case stopped
 }
