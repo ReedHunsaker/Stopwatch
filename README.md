@@ -1,6 +1,6 @@
 # Stopwatch
 
-![Static Badge](https://img.shields.io/badge/iOS-v18.0-green)
+![Static Badge](https://img.shields.io/badge/iOS-v18.0-blue)
 
 A lazily computed stopwatch with nanosecond precision.
 
@@ -32,10 +32,10 @@ The public API is contained in the `Stopwatch()` actor.
 
 A classic stopwatch with lap counters.
 
-<img src="docs/images/ClassicDemo.gif" width=150>
+<img src="docs/images/ClassicDemo.gif" width=275>
 
 ### Simple Game Demo
 
 A simple game to measure the users reflexes.
 
-<img src="docs/images/GameDemo.gif" width=150>
+<img src="docs/images/GameDemo.gif" width=275>
